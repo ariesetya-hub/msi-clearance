@@ -703,17 +703,14 @@ function buildVariantSections() {
   const names = Object.keys(optionMap);
   if (names.length === 1 && names[0] === 'Title') return;
 
-  // Set initial selection
-  names.forEach(name => {
-    const values = [...optionMap[name]];
-    const firstAvail = values.find(v => {
-      const test = { ...selectedOpts, [name]: v };
-      return allVariants.some(variant =>
-        variant.selectedOptions.every(o => test[o.name] === o.value) && variant.availableForSale
-      );
-    }) || values[0];
-    selectedOpts[name] = firstAvail;
-  });
+  // Set initial selection: use first available variant's exact options,
+  // so all option dimensions are set correctly in one shot.
+  const firstAvailable = allVariants.find(v => v.availableForSale);
+  if (firstAvailable) {
+    firstAvailable.selectedOptions.forEach(opt => { selectedOpts[opt.name] = opt.value; });
+  } else {
+    names.forEach(name => { selectedOpts[name] = [...optionMap[name]][0]; });
+  }
 
   const container = document.getElementById('variantSections');
   container.innerHTML = names.map(name => {
@@ -741,11 +738,38 @@ function buildVariantSections() {
 function selectOption(name, value) {
   selectedOpts[name] = value;
 
-  // Re-render buttons
+  // If the current combination is unavailable, auto-advance to the first
+  // available value in each OTHER option dimension so the selection stays valid.
+  const isCurrentComboAvailable = () => allVariants.some(v =>
+    v.selectedOptions.every(o => selectedOpts[o.name] === o.value) && v.availableForSale
+  );
+  if (!isCurrentComboAvailable()) {
+    const firstAvail = allVariants.find(v =>
+      v.selectedOptions.some(o => o.name === name && o.value === value) && v.availableForSale
+    );
+    if (firstAvail) {
+      firstAvail.selectedOptions.forEach(o => { selectedOpts[o.name] = o.value; });
+    }
+  }
+
+  // Re-render buttons: update selected state, availability, and labels
   document.querySelectorAll('.variant-btn').forEach(btn => {
     const bName = btn.dataset.option;
     const bVal  = btn.dataset.value;
+
+    // Selected highlight
     btn.classList.toggle('selected', selectedOpts[bName] === bVal);
+
+    // Re-evaluate availability against current selections
+    const testOpts = { ...selectedOpts, [bName]: bVal };
+    const matchVariant = allVariants.find(v =>
+      v.selectedOptions.every(o => testOpts[o.name] === o.value)
+    );
+    const available = matchVariant?.availableForSale ?? false;
+    btn.classList.toggle('unavailable', !available);
+    btn.disabled = !available;
+
+    // Update label
     const el = document.getElementById(`selectedVal-${bName.replace(/\s/g,'_')}`);
     if (el) el.textContent = selectedOpts[bName];
   });
